@@ -190,9 +190,16 @@ function Library.Utilities:Round(Number: number, Factor: number): number
 	return Library.Utilities:Truncate(Number, Factor, true)
 end
 
-function Library.Utilities:GetIcon(Name: string): { Image: string, ImageRectSize: Vector2, ImageRectOffset: Vector2 }
-	return Name ~= "SetIcon" and Icons[Name] or nil
+function Library.Utilities:GetIcon(Name)
+	local icon = Icons[Name]
+	if not icon then
+		warn(("Icon %q not found; falling back to SetIcon"):format(Name))
+		icon = Icons.SetIcon
+		assert(icon, "Your Icons table must have a `SetIcon` entry!")
+	end
+	return icon
 end
+
 
 function Library.Utilities:Prettify(ToPrettify: EnumItem & string & number): string | number
 
