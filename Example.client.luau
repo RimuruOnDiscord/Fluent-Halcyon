@@ -1,9 +1,8 @@
 local Library = require(game:GetService("ReplicatedStorage"):WaitForChild("Fluent"):WaitForChild("MainModule"))
 
 local Window = Library:Window{
-    Title = `Fluent {Library.Version}`,
-    SubTitle = "by Actual Master Oogway",
-    TabWidth = 160,
+	Logo = `rbxassetid://74593959334913`,
+	TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Resize = true,
     Acrylic = true,
