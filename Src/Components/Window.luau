@@ -13,6 +13,8 @@ local Library = require(Root)
 local UserInputService = Library.Utilities:Clone(game:GetService("UserInputService"))
 local Mouse = Library.Utilities:Clone(game:GetService("Players")).LocalPlayer:GetMouse()
 local Camera = Library.Utilities:Clone(game:GetService("Workspace")).CurrentCamera
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local Spring = Flipper.Spring.new
 local Instant = Flipper.Instant.new
@@ -126,18 +128,30 @@ return function(Config)
 		Window.ContainerAnim,
 		Window.ContainerHolder
 	})
+	
+	Window.CanvasGroup = New("CanvasGroup", {
+		BackgroundTransparency = 1,
+		Size                   = UDim2.new(1, 0, 1, 0),
+		Parent                 = Config.Parent,
+	})
 
 	Window.Root = New("Frame", {
 		BackgroundTransparency = 1,
-		Size = Window.Size,
-		Position = Window.Position,
-		Parent = Config.Parent,
+		Size                   = Window.Size,
+		AnchorPoint			   = Vector2.new(0.5, 0.5),
+		Position               = UDim2.new(0.5, 0, 0.5, 0),
+		Parent                 = Window.CanvasGroup,
 	}, {
 		Window.AcrylicPaint.Frame,
 		Window.TabDisplay,
 		Window.ContainerCanvas,
 		TabFrame,
 		ResizeStartFrame,
+	})
+
+	Window.UIScale = New("UIScale", {
+		Scale  = 1,
+		Parent = Window.Root,
 	})
 
 	Window.HideButton = New("ImageButton", {
@@ -152,14 +166,14 @@ return function(Config)
 	})
 
 	Window.TitleBar = require(script.Parent.TitleBar)({
-		Title = Config.Title,
+		Logo = Config.Logo,
 		SubTitle = Config.SubTitle,
 		Parent = Window.Root,
 		Window = Window,
 	})
 
 	if Library.UseAcrylic then
-		Window.AcrylicPaint.AddParent(Window.Root)
+		Window.AcrylicPaint.AddParent(Window.CanvasGroup)
 	end
 
 	local SizeMotor = Flipper.GroupMotor.new({
@@ -211,41 +225,137 @@ return function(Config)
 		Window.ContainerAnim.Position = UDim2.fromOffset(0, Value)
 	end)
 
-	local OldSizeX
-	local OldSizeY
-	Window.Maximize = function(Value, NoPos, Instant)
+	local oldSize, oldPosition
+
+	Window.Maximize = function(isMaximized, noPos, instant)
 		Window.OnMaximized:Fire(tick())
+		Window.Maximized = isMaximized
+		Window.TitleBar.MaxButton.Frame.Icon.Image = isMaximized and Assets.Restore or Assets.Max
 
-		Window.Maximized = Value
-		Window.TitleBar.MaxButton.Frame.Icon.Image = Value and Assets.Restore or Assets.Max
-
-		if Value then
-			OldSizeX = Window.Size.X.Offset
-			OldSizeY = Window.Size.Y.Offset
+		-- on maximize: stash current size & pos
+		if isMaximized then
+			oldSize     = Window.Root.Size
+			oldPosition = Window.Root.Position
 		end
-		local SizeX = Value and Camera.ViewportSize.X or OldSizeX
-		local SizeY = Value and Camera.ViewportSize.Y or OldSizeY
-		SizeMotor:setGoal({
-			X = Flipper[Instant and "Instant" or "Spring"].new(SizeX, { frequency = 6 }),
-			Y = Flipper[Instant and "Instant" or "Spring"].new(SizeY, { frequency = 6 }),
-		})
-		Window.Size = UDim2.fromOffset(SizeX, SizeY)
 
-		if not NoPos then
-			PosMotor:setGoal({
-				X = Spring(Value and 0 or Window.Position.X.Offset, { frequency = 6 }),
-				Y = Spring(Value and 0 or Window.Position.Y.Offset, { frequency = 6 }),
-			})
+		-- decide our targets
+		local targetSize     = isMaximized and UDim2.new(1, 0, 1, 0) or oldSize
+		local targetPosition = isMaximized and UDim2.fromScale(0.5, 0.5) or oldPosition
+
+		if instant then
+			-- jump immediately
+			Window.Root.Size     = targetSize
+			if not noPos then
+				Window.Root.Position = targetPosition
+			end
+		else
+			-- tween size
+			TweenService:Create(
+				Window.Root,
+				TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+				{ Size = targetSize }
+			):Play()
+
+			-- tween position (unless NoPos is true)
+			if not noPos then
+				TweenService:Create(
+					Window.Root,
+					TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+					{ Position = targetPosition }
+				):Play()
+			end
 		end
 
 		Window.PostMaximized:Fire(tick())
 	end
 
 	Creator.AddSignal(Window.TitleBar.Frame.InputBegan, function(Input)
+		if Input.UserInputType == Enum.UserInputType.MouseButton1
+			or Input.UserInputType == Enum.UserInputType.Touch then
+			Dragging   = true
+			MousePos   = Input.Position
+			-- ← grab whatever the window’s current position is (preserves your .Scale)
+			StartPos   = Window.Root.Position
+
+			if Window.Maximized then
+				-- your existing maximized logic
+				StartPos = UDim2.fromOffset(
+					Mouse.X - (Mouse.X * ((OldSizeX - 100) / Window.Root.AbsoluteSize.X)),
+					Mouse.Y - (Mouse.Y * (OldSizeY / Window.Root.AbsoluteSize.Y))
+				)
+			end
+
+			Input.Changed:Connect(function()
+				if Input.UserInputState == Enum.UserInputState.End then
+					Dragging = false
+				end
+			end)
+		end
+	end)
+
+
+	Creator.AddSignal(Window.TitleBar.Frame.InputChanged, function(Input)
 		if
-			Input.UserInputType == Enum.UserInputType.MouseButton1
+			Input.UserInputType == Enum.UserInputType.MouseMovement
 			or Input.UserInputType == Enum.UserInputType.Touch
 		then
+			DragInput = Input
+		end
+	end)
+
+	local UserInputService = game:GetService("UserInputService")
+
+	-- your globals
+	local Resizing   = false
+	local ResizePos  = Vector2.new()
+	local StartSize  = Vector2.new()
+	-- optional: enforce a minimum size
+	local MIN_SIZE   = Vector2.new(200, 100)
+
+	-- when you press the resize handle…
+	Creator.AddSignal(ResizeStartFrame.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			Resizing  = true
+			ResizePos = input.Position
+			-- grab the window’s current pixel size
+			StartSize = Vector2.new(
+				Window.Root.AbsoluteSize.X,
+				Window.Root.AbsoluteSize.Y
+			)
+
+			-- end resize when the user releases
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					Resizing = false
+				end
+			end)
+		end
+	end)
+
+	-- track every mouse‐move globally
+	UserInputService.InputChanged:Connect(function(input)
+		if Resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Position - ResizePos
+
+			-- compute new size, clamped to a minimum
+			local newW = math.max(StartSize.X + delta.X, MIN_SIZE.X)
+			local newH = math.max(StartSize.Y + delta.Y, MIN_SIZE.Y)
+
+			-- apply it (0 scale = pure-pixel sizing)
+			Window.Root.Size = UDim2.new(0, newW, 0, newH)
+		end
+	end)
+
+
+
+	local Dragging   = false
+	local MousePos   = Vector2.new()
+	local StartPos   = UDim2.new()
+
+	Creator.AddSignal(Window.TitleBar.Frame.InputBegan, function(Input)
+		if Input.UserInputType == Enum.UserInputType.MouseButton1
+			or Input.UserInputType == Enum.UserInputType.Touch then
 			Dragging = true
 			MousePos = Input.Position
 			StartPos = Window.Root.Position
@@ -265,56 +375,16 @@ return function(Config)
 		end
 	end)
 
-	Creator.AddSignal(Window.TitleBar.Frame.InputChanged, function(Input)
-		if
-			Input.UserInputType == Enum.UserInputType.MouseMovement
-			or Input.UserInputType == Enum.UserInputType.Touch
-		then
-			DragInput = Input
+	UserInputService.InputChanged:Connect(function(Input)
+		if Dragging and Input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = Input.Position - MousePos
+			Window.Root.Position = UDim2.new(
+				StartPos.X.Scale, StartPos.X.Offset + delta.X,
+				StartPos.Y.Scale, StartPos.Y.Offset + delta.Y
+			)
 		end
 	end)
 
-	Creator.AddSignal(ResizeStartFrame.InputBegan, function(Input)
-		if
-			Input.UserInputType == Enum.UserInputType.MouseButton1
-			or Input.UserInputType == Enum.UserInputType.Touch
-		then
-			Resizing = true
-			ResizePos = Input.Position
-		end
-	end)
-
-	Creator.AddSignal(UserInputService.InputChanged, function(Input)
-		if Input == DragInput and Dragging then
-			local Delta = Input.Position - MousePos
-			Window.Position = UDim2.fromOffset(StartPos.X.Offset + Delta.X, StartPos.Y.Offset + Delta.Y)
-			PosMotor:setGoal({
-				X = Instant(Window.Position.X.Offset),
-				Y = Instant(Window.Position.Y.Offset),
-			})
-
-			if Window.Maximized then
-				Window.Maximize(false, true, true)
-			end
-		end
-
-		if
-			(Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch)
-			and Resizing
-		then
-			local Delta = Input.Position - ResizePos
-			local StartSize = Window.Size
-
-			local TargetSize = Vector3.new(StartSize.X.Offset, StartSize.Y.Offset, 0) + Vector3.new(1, 1, 0) * Delta
-			local TargetSizeClamped =
-				Vector2.new(math.clamp(TargetSize.X, Window.MinSize.X, 2048), math.clamp(TargetSize.Y, Window.MinSize.Y, 2048))
-
-			SizeMotor:setGoal({
-				X = Flipper.Instant.new(TargetSizeClamped.X),
-				Y = Flipper.Instant.new(TargetSizeClamped.Y),
-			})
-		end
-	end)
 
 	Creator.AddSignal(UserInputService.InputEnded, function(Input)
 		if Resizing == true or Input.UserInputType == Enum.UserInputType.Touch then
@@ -328,32 +398,67 @@ return function(Config)
 			Window.TabHolder.CanvasSize = UDim2.fromOffset(0, Window.TabHolder.UIListLayout.AbsoluteContentSize.Y)
 		end
 	end)
-
+	
 	function Window:Minimize()
 		Window.Minimized = not Window.Minimized
-		Window.Root.Visible = not Window.Minimized
+
+		local targetScale        = Window.Minimized and 0.96 or 1
+		local targetTransparency = Window.Minimized and 1    or 0
+
+		local TweenService = game:GetService("TweenService")
+		local tweenInfo   = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+		local scaleTween = TweenService:Create(
+			Window.UIScale,
+			tweenInfo,
+			{ Scale = targetScale }
+		)
+		scaleTween:Play()
+
+		if targetTransparency == 0 then
+			Window.CanvasGroup.Visible = true
+		end
+
+		local fadeTween = TweenService:Create(
+			Window.CanvasGroup,
+			tweenInfo,
+			{ GroupTransparency = targetTransparency }
+		)
+		fadeTween:Play()
+
+		if targetTransparency == 1 then
+			fadeTween.Completed:Connect(function()
+				Window.CanvasGroup.Visible = false
+			end)
+		end
 
 		Window.OnMinimized:Fire(tick(), Window.Root.Visible)
 
 		if not MinimizeNotif then
-			local Key = Library.MinimizeKeybind and Library.MinimizeKeybind.Value or typeof(Library.MinimizeKey) == "string" and Library.MinimizeKey or Library.MinimizeKey.Name
+			local Key = Library.MinimizeKeybind and Library.MinimizeKeybind.Value
+				or type(Library.MinimizeKey) == "string" and Library.MinimizeKey
+				or Library.MinimizeKey.Name
 
 			MinimizeNotif = true
-			
 			Library:Notify({
-				Title = "Interface",
-				Content = `Press {Library.Utilities:Prettify(Key)} to toggle the interface.`,
+				Title    = "Interface",
+				Content  = `Press {Library.Utilities:Prettify(Key)} to toggle the interface.`,
 				Duration = 6
 			})
 		end
+
+		-- update mobile icon if needed
 		if Library.Utilities:GetOS() == "Mobile" then
 			local Icon = Config.Mobile.GetIcon(Window.Minimized)
-			Window.HideButton.Image = Icon.Image
+			Window.HideButton.Image           = Icon.Image
 			Window.HideButton.ImageRectOffset = Icon.ImageRectOffset
-			Window.HideButton.ImageRectSize = Icon.ImageRectSiz
+			Window.HideButton.ImageRectSize   = Icon.ImageRectSize
 		end
+
 		Window.PostMinimized:Fire(tick(), Window.Root.Visible)
 	end
+
+
 
 	Creator.AddSignal(UserInputService.InputBegan, function(Input)
 		if
@@ -428,10 +533,9 @@ return function(Config)
 	local DialogModule = require(Components.Dialog):Init(Window)
 	function Window:Dialog(Config)
 		local Dialog = DialogModule:Create()
-		Dialog.Title.Text = Config.Title
 
 		local Content = New("TextLabel", {
-			FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json"),
+			FontFace = Font.new("rbxassetid://12187365364"),
 			Text = Config.Content,
 			TextColor3 = Color3.fromRGB(240, 240, 240),
 			TextSize = 14,
