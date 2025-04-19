@@ -1,41 +1,77 @@
 local Root = script.Parent.Parent
+local Flipper = require(Root.Packages.Flipper)
 local Creator = require(Root.Modules.Creator)
- 
 local New = Creator.New
-local Components = Root.Components
 
-local Element = {}
-Element.__index = Element
-Element.__type = "Button"
+local Spring = Flipper.Spring.new
 
-function Element:New(Config)
-	assert(Config.Title, "Button - Missing Title")
-	Config.Callback = Config.Callback or function() end
+return function(Theme, Parent, DialogCheck)
+	local Button = {}
 
-	local ButtonFrame = require(Components.Element)(Config.Title, Config.Description, self.Container, true)
+	DialogCheck = DialogCheck or false
 
-	local ButtonIco = New("ImageLabel", {
-		Size = UDim2.fromOffset(16, 16),
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -10, 0.5, 0),
+	Button.Title = New("TextLabel", {
+		FontFace = Font.new("rbxassetid://12187365364"),
+		TextColor3 = Color3.fromRGB(200, 200, 200),
+		TextSize = 14,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
-		Parent = ButtonFrame.Frame,
+		Size = UDim2.fromScale(1, 1),
 		ThemeTag = {
-			ImageColor3 = "Text",
-		}
-	}) :: ImageLabel
+			TextColor3 = "Text",
+		},
+	})
 
-	self.Library.Utilities.Icons:SetIcon(ButtonIco, "chevron-right")
+	Button.HoverFrame = New("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ThemeTag = {
+			BackgroundColor3 = "Hover",
+		},
+	}, {
+		New("UICorner", {
+			CornerRadius = UDim.new(0, 4),
+		}),
+	})
 
-	Creator.AddSignal(ButtonFrame.Frame.MouseButton1Click, function()
-		if typeof(Config.Callback) == "function" then
-			self.Library:SafeCallback(Config.Callback, Config.Value)
-		end
+	Button.Frame = New("TextButton", {
+		Size = UDim2.new(0, 0, 0, 32),
+		Parent = Parent,
+		ThemeTag = {
+			BackgroundColor3 = "DialogButton",
+		},
+	}, {
+		New("UICorner", {
+			CornerRadius = UDim.new(0, 4),
+		}),
+		New("UIStroke", {
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Transparency = 0.65,
+			ThemeTag = {
+				Color = "DialogButtonBorder",
+			},
+		}),
+		Button.HoverFrame,
+		Button.Title,
+	})
+
+	local Motor, SetTransparency = Creator.SpringMotor(1, Button.HoverFrame, "BackgroundTransparency", DialogCheck)
+	Creator.AddSignal(Button.Frame.MouseEnter, function()
+		SetTransparency(0.97)
+	end)
+	Creator.AddSignal(Button.Frame.MouseLeave, function()
+		SetTransparency(1)
+	end)
+	Creator.AddSignal(Button.Frame.MouseButton1Down, function()
+		SetTransparency(1)
+	end)
+	Creator.AddSignal(Button.Frame.MouseButton1Up, function()
+		SetTransparency(0.97)
 	end)
 
-	ButtonFrame.Instance = ButtonFrame
-
-	return ButtonFrame
+	return Button
 end
-
-return Element
