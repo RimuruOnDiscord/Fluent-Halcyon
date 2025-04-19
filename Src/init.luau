@@ -247,8 +247,7 @@ end
 Library.Elements = Elements
 
 function Library:Window(Config: {
-		Title: string?,
-		SubTitle: string?,
+		Logo: string?,
 		TabWidth: number?,
 		MinSize: Vector2?,
 		Size: UDim2?,
@@ -263,10 +262,9 @@ function Library:Window(Config: {
 	})
 	assert(Library.CreatedWindow == nil, debug.traceback("You cannot create more than one window.", 2))
 
-	if not Config.Title then
-		local Success, Game_Info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, game.PlaceId)
+	if not Config.Logo then
 		
-		Config.Title = Success and Game_Info.Name or "Fluent Renewed"
+		Config.Logo = 'rbxassetid://74593959334913'
 	end
 
 	Config.MinSize = if typeof(Config.MinSize) == "Vector2" then Config.MinSize else Vector2.new(470, 380)
@@ -290,9 +288,8 @@ function Library:Window(Config: {
 		Size = Config.Size,
 		MinSize = Config.MinSize,
 
-		Title = Config.Title,
-		SubTitle = Config.SubTitle or "Made with Fluent Renewed",
-
+		Logo = Config.Logo,
+		
 		TabWidth = Config.TabWidth or 160,
 		Mobile = Config.Mobile or {
 			GetIcon = function(IsMinimized: boolean): { Image: string, ImageRectOffset: Vector2, ImageRectSize: Vector2 }
@@ -302,7 +299,8 @@ function Library:Window(Config: {
 		}
 	}
 
-	BaseContainer.Name = `FluentRenewed_{Config.Title}`
+	BaseContainer.Name = `FluentRenewed`
+	BaseContainer.IgnoreGuiInset = true
 
 	Library.CreatedWindow = Window
 	Library:SetTheme(Library.Theme)
