@@ -62,7 +62,7 @@ function TabModule:New(Title, Icon, Parent)
 			TextColor3 = Color3.fromRGB(255, 255, 255),
 			TextTransparency = 0,
 			FontFace = Font.new(
-				"rbxasset://fonts/families/GothamSSm.json",
+				"rbxassetid://12187365364",
 				Enum.FontWeight.Regular,
 				Enum.FontStyle.Normal
 			),
