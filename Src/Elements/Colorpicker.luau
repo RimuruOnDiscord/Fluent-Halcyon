@@ -88,7 +88,7 @@ function Element:New(Idx, Config)
 		local function CreateInputLabel(Text, Pos): TextLabel
 			return New("TextLabel", {
 				FontFace = Font.new(
-					"rbxasset://fonts/families/GothamSSm.json",
+					"rbxassetid://12187365364",
 					Enum.FontWeight.Medium,
 					Enum.FontStyle.Normal
 				),
@@ -139,7 +139,7 @@ function Element:New(Idx, Config)
 			BackgroundTransparency = Colorpicker.Transparency,
 		}, {
 			New("UICorner", {
-				CornerRadius = UDim.new(0, 4),
+				CornerRadius = UDim.new(0, 6),
 			}),
 		}) :: Frame
 
